@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#111122">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Höhe">
+<title>Höhenmesser</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:    #0d1020;
+  --card:  #111830;
+  --ring:  #1e2a4a;
+  --bdr:   #2a3a6a;
+  --acc:   #5bc8f5;
+  --adim:  #7ab8d4;
+  --txt:   #c8e4f5;
+  --muted: #556070;
+  --green: #4ecb8d;
+  --org:   #f5a623;
+  --red:   #e24b4a;
+}
+html,body{height:100%;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;overflow:hidden;touch-action:manipulation}
+
+/* ═══════════════════════════════
+   VOLLANSICHT
+═══════════════════════════════ */
+#full-view{height:100%;display:flex;flex-direction:column;max-width:480px;margin:0 auto}
+#statusbar{background:#090b14;display:flex;justify-content:space-between;align-items:center;padding:env(safe-area-inset-top,8px) 16px 4px;font-size:12px;color:#778;flex-shrink:0}
+#topbar{background:#090b14;padding:8px 16px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:0.5px solid #ffffff18;flex-shrink:0}
+#topbar h1{font-size:17px;font-weight:600;color:#fff;display:flex;align-items:center;gap:8px}
+.gps-badge{font-size:12px;padding:4px 10px;border-radius:20px;font-weight:500;display:flex;align-items:center;gap:6px}
+.gps-ok{background:#0a3d2b;color:var(--green)}
+.gps-wait{background:#3d2e0a;color:var(--org)}
+.gps-err{background:#3d1010;color:var(--red)}
+.dot{width:8px;height:8px;border-radius:50%;background:currentColor;animation:pulse 1.4s infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.25}}
+#scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px 16px 80px;display:flex;flex-direction:column;align-items:center;gap:16px}
+
+#ring-wrap{position:relative;width:210px;height:210px}
+#ring-svg{position:absolute;top:0;left:0;width:100%;height:100%}
+#ring-inner{position:absolute;inset:18px;border-radius:50%;background:#0d1526;display:flex;flex-direction:column;align-items:center;justify-content:center}
+#alt-value{font-size:54px;font-weight:300;color:var(--acc);letter-spacing:-2px;line-height:1;font-variant-numeric:tabular-nums}
+#alt-unit{font-size:14px;color:var(--adim);letter-spacing:3px;margin-top:2px}
+#alt-label{font-size:10px;color:var(--muted);margin-top:6px;letter-spacing:1.5px;text-transform:uppercase}
+#trend-icon{position:absolute;top:26px;right:26px;font-size:18px}
+#error-box{display:none;width:100%;background:#3d1010;border:0.5px solid #7a2020;border-radius:12px;padding:12px 16px;font-size:14px;color:#f0a0a0;text-align:center;line-height:1.5}
+#stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%}
+.card{background:var(--card);border:0.5px solid var(--bdr);border-radius:12px;padding:12px 14px}
+.card-label{font-size:11px;color:var(--muted);margin-bottom:5px}
+.card-val{font-size:18px;font-weight:500;color:var(--txt);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-sub{font-size:11px;color:var(--muted);margin-top:2px}
+#sparkline{width:100%;height:70px;display:block}
+
+/* ── Floating Toggle Button ── */
+#fab{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);right:20px;width:56px;height:56px;border-radius:50%;background:var(--acc);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:900;box-shadow:none;-webkit-tap-highlight-color:transparent;transition:transform 0.15s}
+#fab:active{transform:scale(0.92)}
+#fab svg{width:26px;height:26px;fill:none;stroke:#0d1020;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+
+/* ═══════════════════════════════
+   KOMPAKT-OVERLAY
+═══════════════════════════════ */
+#compact-view{
+  display:none;
+  position:fixed;
+  inset:0;
+  background:transparent;
+  z-index:800;
+  pointer-events:none;
+}
+#compact-view.active{display:block}
+
+#bubble{
+  position:absolute;
+  top:80px;
+  right:20px;
+  width:110px;
+  height:110px;
+  border-radius:50%;
+  background:rgba(13,16,32,0.92);
+  border:2.5px solid var(--acc);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  cursor:grab;
+  pointer-events:all;
+  user-select:none;
+  -webkit-user-select:none;
+  transition:border-color 0.3s;
+}
+#bubble:active{cursor:grabbing;border-color:#4ecb8d}
+#b-val{font-size:32px;font-weight:300;color:var(--acc);line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-1px}
+#b-unit{font-size:11px;color:var(--adim);letter-spacing:2px;margin-top:2px}
+#b-acc{font-size:10px;color:var(--muted);margin-top:3px}
+#b-gps{position:absolute;top:10px;right:10px;width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.4s infinite}
+#b-trend{position:absolute;top:10px;left:10px;font-size:14px;color:var(--green)}
+
+/* Expand zurück Button im Kompaktmodus */
+#fab-expand{
+  position:fixed;
+  bottom:calc(env(safe-area-inset-bottom,0px) + 20px);
+  left:20px;
+  background:rgba(13,16,32,0.85);
+  border:1px solid var(--bdr);
+  border-radius:24px;
+  padding:10px 16px;
+  font-size:13px;
+  color:var(--adim);
+  cursor:pointer;
+  display:none;
+  align-items:center;
+  gap:8px;
+  z-index:900;
+  pointer-events:all;
+  -webkit-tap-highlight-color:transparent;
+}
+#fab-expand.active{display:flex}
+#fab-expand svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* Hintergrundsimulation im Kompaktmodus */
+#map-sim{
+  position:absolute;
+  inset:0;
+  background:linear-gradient(135deg,#e8f0e8 0%,#d4e8d4 100%);
+  display:none;
+  pointer-events:none;
+}
+#map-sim.active{display:block}
+.sim-road{position:absolute;background:#ffffff88}
+.sim-road.h{height:6px;width:100%;top:42%}
+.sim-road.v{width:6px;height:100%;left:35%}
+.sim-road.h2{height:4px;width:55%;top:68%;left:25%}
+.sim-road.v2{width:4px;height:50%;left:62%;top:30%}
+.sim-label{position:absolute;font-size:10px;background:#fffc;padding:2px 5px;border-radius:3px;color:#333}
+</style>
+</head>
+<body>
+
+<!-- ══ VOLLANSICHT ══ -->
+<div id="full-view">
+  <div id="statusbar">
+    <span id="clock">--:--</span>
+    <span style="display:flex;gap:8px;align-items:center;color:#778">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11v2"/><rect x="4" y="9" width="10" height="6" rx="1" fill="currentColor"/></svg>
+    </span>
+  </div>
+
+  <div id="topbar">
+    <h1>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5bc8f5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21l4-12 4 12M3 21l5-5M21 21l-5-5M12 9l-2-4M12 9l2-4"/></svg>
+      Höhenmesser
+    </h1>
+    <div class="gps-badge gps-wait" id="gps-badge">
+      <div class="dot" id="gps-dot"></div>
+      <span id="gps-text">GPS…</span>
+    </div>
+  </div>
+
+  <div id="scroll">
+    <div id="ring-wrap">
+      <svg id="ring-svg" viewBox="0 0 210 210">
+        <circle cx="105" cy="105" r="100" fill="none" stroke="#1a2a4a" stroke-width="8"/>
+        <circle id="arc" cx="105" cy="105" r="100" fill="none" stroke="#5bc8f5" stroke-width="4"
+          stroke-dasharray="0 628" stroke-linecap="round" transform="rotate(-90,105,105)"/>
+      </svg>
+      <div id="ring-inner">
+        <div id="alt-value">--</div>
+        <div id="alt-unit">M</div>
+        <div id="alt-label">abs. höhe</div>
+      </div>
+      <div id="trend-icon">⟶</div>
+    </div>
+
+    <div id="error-box" role="alert"></div>
+
+    <div id="stats">
+      <div class="card">
+        <div class="card-label">↕ Min / Max</div>
+        <div class="card-val" id="s-minmax">-- / --</div>
+        <div class="card-sub">Sitzung (m)</div>
+      </div>
+      <div class="card">
+        <div class="card-label">↗ Änderung</div>
+        <div class="card-val" id="s-delta">±0 m</div>
+        <div class="card-sub">seit Start</div>
+      </div>
+      <div class="card">
+        <div class="card-label">◎ Genauigkeit</div>
+        <div class="card-val" id="s-acc">-- m</div>
+        <div class="card-sub">GPS ±Fehler</div>
+      </div>
+      <div class="card">
+        <div class="card-label">◷ Aktualisiert</div>
+        <div class="card-val" id="s-time">--:--:--</div>
+        <div class="card-sub">Uhrzeit</div>
+      </div>
+      <div class="card" style="grid-column:1/-1">
+        <div class="card-label">⌖ Koordinaten</div>
+        <div class="card-val" id="s-coords" style="font-size:14px">-- / --</div>
+        <div class="card-sub">Lat / Lon (WGS84)</div>
+      </div>
+    </div>
+
+    <div class="card" style="width:100%">
+      <div class="card-label" style="margin-bottom:10px">〜 Höhenverlauf (letzte 60)</div>
+      <canvas id="sparkline"></canvas>
+    </div>
+
+    <button onclick="recalibrate()" style="width:100%;background:var(--card);border:0.5px solid var(--bdr);border-radius:12px;color:var(--adim);font-size:14px;padding:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;font-family:inherit">
+      ↺ Neu kalibrieren
+    </button>
+
+    <div class="card" style="width:100%;font-size:12px;color:var(--muted);line-height:1.7">
+      <strong style="color:var(--txt);display:block;margin-bottom:6px">Tipp — Kompakt-Modus</strong>
+      Den blauen Button unten rechts tippen um zum runden Overlay zu wechseln.
+      Das Overlay ist frei verschiebbar und zeigt nur die Höhe.
+      So kann gleichzeitig Google Maps oder jede andere App genutzt werden.
+    </div>
+  </div>
+</div>
+
+<!-- ── FAB: Wechsel zu Kompakt ── -->
+<button id="fab" onclick="switchToCompact()" aria-label="Kompakt-Modus">
+  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+</button>
+
+<!-- ══ KOMPAKT-OVERLAY ══ -->
+<div id="compact-view">
+  <div id="map-sim">
+    <div class="sim-road h"></div>
+    <div class="sim-road v"></div>
+    <div class="sim-road h2"></div>
+    <div class="sim-road v2"></div>
+    <div class="sim-label" style="top:38%;left:37%">Lenzing</div>
+    <div class="sim-label" style="top:60%;left:15%">Vöcklabruck</div>
+  </div>
+
+  <div id="bubble" role="status" aria-label="Aktuelle Höhe">
+    <div id="b-gps"></div>
+    <div id="b-trend">→</div>
+    <div id="b-val">--</div>
+    <div id="b-unit">M</div>
+    <div id="b-acc">±-- m</div>
+  </div>
+</div>
+
+<!-- ── FAB: zurück zu Vollansicht ── -->
+<button id="fab-expand" onclick="switchToFull()" aria-label="Vollansicht öffnen">
+  <svg viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+  Vollansicht
+</button>
+
+<script>
+'use strict';
+(function(){
+
+const altEl    = document.getElementById('alt-value');
+const errBox   = document.getElementById('error-box');
+const gpsBadge = document.getElementById('gps-badge');
+const gpsDot   = document.getElementById('gps-dot');
+const gpsText  = document.getElementById('gps-text');
+const trendEl  = document.getElementById('trend-icon');
+const clockEl  = document.getElementById('clock');
+const arcEl    = document.getElementById('arc');
+
+const sMinmax  = document.getElementById('s-minmax');
+const sDelta   = document.getElementById('s-delta');
+const sAcc     = document.getElementById('s-acc');
+const sTime    = document.getElementById('s-time');
+const sCoords  = document.getElementById('s-coords');
+
+const canvas   = document.getElementById('sparkline');
+const ctx      = canvas.getContext('2d');
+
+const bVal     = document.getElementById('b-val');
+const bAcc     = document.getElementById('b-acc');
+const bTrend   = document.getElementById('b-trend');
+const bGps     = document.getElementById('b-gps');
+
+let history = [], altMin = Infinity, altMax = -Infinity;
+let watchId = null, firstAlt = null, lastAlt = null;
+let isCompact = false;
+
+/* ── Clock ── */
+function tick(){
+  clockEl.textContent = new Date().toLocaleTimeString('de-AT',{hour:'2-digit',minute:'2-digit'});
+}
+tick(); setInterval(tick,1000);
+
+/* ── Badge ── */
+function setBadge(s){
+  gpsBadge.className='gps-badge '+s;
+  if(s==='gps-ok'){gpsText.textContent='GPS aktiv';bGps.style.background='#4ecb8d';}
+  else if(s==='gps-wait'){gpsText.textContent='GPS…';bGps.style.background='#f5a623';}
+  else{gpsText.textContent='Fehler';bGps.style.background='#e24b4a';}
+}
+
+/* ── Arc ── */
+function setArc(alt){
+  const lo=altMin===Infinity?alt:altMin;
+  const hi=altMax===-Infinity?alt:altMax;
+  const f=(alt-lo)/((hi-lo)||1);
+  const c=2*Math.PI*100;
+  arcEl.setAttribute('stroke-dasharray',(f*c).toFixed(1)+' '+c.toFixed(1));
+}
+
+/* ── Sparkline ── */
+function drawSpark(){
+  const dpr=Math.min(window.devicePixelRatio||1,3);
+  const w=canvas.parentElement.offsetWidth-28;
+  const h=70;
+  canvas.width=w*dpr; canvas.height=h*dpr;
+  canvas.style.width=w+'px'; canvas.style.height=h+'px';
+  ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,w,h);
+  if(history.length<2)return;
+  const vals=history.map(p=>p.alt);
+  const lo=Math.min(...vals),hi=Math.max(...vals),r=hi-lo||1;
+  const pts=vals.map((v,i)=>({x:(i/(vals.length-1))*w,y:h-4-((v-lo)/r)*(h-10)}));
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x,pts[0].y);
+  pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.lineTo(pts[pts.length-1].x,h);
+  ctx.lineTo(pts[0].x,h);
+  ctx.closePath();
+  ctx.fillStyle='rgba(91,200,245,0.12)';ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x,pts[0].y);
+  pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.strokeStyle='#5bc8f5';ctx.lineWidth=2;ctx.lineJoin='round';ctx.stroke();
+  const lp=pts[pts.length-1];
+  ctx.beginPath();ctx.arc(lp.x,lp.y,4.5,0,Math.PI*2);ctx.fillStyle='#5bc8f5';ctx.fill();
+}
+
+/* ── Helpers ── */
+function fmt(m){return Math.round(m).toLocaleString('de-AT');}
+function fmtCoord(v,p,n){const d=Math.abs(v);return Math.floor(d)+'° '+((d-Math.floor(d))*60).toFixed(3)+"' "+(v>=0?p:n);}
+
+/* ── Position ── */
+function onPos(pos){
+  errBox.style.display='none';
+  setBadge('gps-ok');
+  const raw=pos.coords.altitude;
+  if(raw===null||raw===undefined){showErr('GPS liefert keine Höhendaten.\nBitte im Freien versuchen.');return;}
+  const alt=raw;
+  if(firstAlt===null)firstAlt=alt;
+  lastAlt=alt;
+  history.push({alt});
+  if(history.length>60)history.shift();
+  if(alt<altMin)altMin=alt;
+  if(alt>altMax)altMax=alt;
+
+  altEl.textContent=fmt(alt);
+  bVal.textContent=fmt(alt);
+  setArc(alt);
+
+  const acc=pos.coords.altitudeAccuracy;
+  const accStr=acc!==null?'±'+Math.round(acc)+' m':'±n/a';
+  sAcc.textContent=accStr;
+  bAcc.textContent=accStr;
+  sTime.textContent=new Date().toLocaleTimeString('de-AT');
+  sMinmax.textContent=fmt(altMin)+' / '+fmt(altMax);
+
+  const delta=alt-firstAlt;
+  sDelta.textContent=(delta>=0?'+':'')+Math.round(delta)+' m';
+
+  const lat=pos.coords.latitude,lon=pos.coords.longitude;
+  sCoords.textContent=fmtCoord(lat,'N','S')+' / '+fmtCoord(lon,'E','W');
+
+  if(history.length>3){
+    const prev=history[history.length-4].alt;
+    const d=alt-prev;
+    if(d>0.5){
+      trendEl.textContent='↑';trendEl.style.color='#4ecb8d';
+      bTrend.textContent='↑';bTrend.style.color='#4ecb8d';
+    } else if(d<-0.5){
+      trendEl.textContent='↓';trendEl.style.color='#f5a623';
+      bTrend.textContent='↓';bTrend.style.color='#f5a623';
+    } else {
+      trendEl.textContent='→';trendEl.style.color='#556070';
+      bTrend.textContent='→';bTrend.style.color='#556070';
+    }
+  }
+  drawSpark();
+}
+
+function onErr(e){
+  setBadge('gps-err');
+  let m='GPS-Fehler.';
+  if(e.code===1)m='Standortzugriff verweigert.\nBitte Berechtigung erteilen.';
+  else if(e.code===2)m='Position nicht verfügbar.\nIm Freien versuchen.';
+  else if(e.code===3)m='GPS-Zeitüberschreitung.';
+  showErr(m);
+}
+
+function showErr(msg){
+  altEl.textContent='--';bVal.textContent='--';
+  errBox.style.display='block';errBox.textContent=msg;
+}
+
+function startWatch(){
+  if(!navigator.geolocation){showErr('Geolocation nicht unterstützt.');return;}
+  if(watchId!==null)navigator.geolocation.clearWatch(watchId);
+  setBadge('gps-wait');
+  watchId=navigator.geolocation.watchPosition(onPos,onErr,{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+}
+
+window.recalibrate=function(){
+  altMin=Infinity;altMax=-Infinity;firstAlt=null;lastAlt=null;history=[];
+  altEl.textContent='--';bVal.textContent='--';
+  sMinmax.textContent='-- / --';sDelta.textContent='±0 m';
+  sAcc.textContent='-- m';sTime.textContent='--:--:--';sCoords.textContent='-- / --';
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  arcEl.setAttribute('stroke-dasharray','0 628');
+  startWatch();
+};
+
+/* ═══════════════════════════════
+   MODUS-UMSCHALTER
+═══════════════════════════════ */
+window.switchToCompact=function(){
+  isCompact=true;
+  document.getElementById('full-view').style.display='none';
+  document.getElementById('fab').style.display='none';
+  document.getElementById('compact-view').classList.add('active');
+  document.getElementById('map-sim').classList.add('active');
+  document.getElementById('fab-expand').classList.add('active');
+};
+
+window.switchToFull=function(){
+  isCompact=false;
+  document.getElementById('full-view').style.display='flex';
+  document.getElementById('fab').style.display='flex';
+  document.getElementById('compact-view').classList.remove('active');
+  document.getElementById('map-sim').classList.remove('active');
+  document.getElementById('fab-expand').classList.remove('active');
+  setTimeout(drawSpark,100);
+};
+
+/* ═══════════════════════════════
+   DRAG — Bubble verschieben
+═══════════════════════════════ */
+(function(){
+  const bubble=document.getElementById('bubble');
+  let dragging=false,startX,startY,ox,oy;
+
+  function getPos(){
+    return{left:parseInt(bubble.style.left||'')||null,right:parseInt(bubble.style.right||'20'),top:parseInt(bubble.style.top||'80')};
+  }
+
+  bubble.addEventListener('pointerdown',e=>{
+    dragging=true;bubble.setPointerCapture(e.pointerId);
+    const rect=bubble.getBoundingClientRect();
+    ox=e.clientX-rect.left; oy=e.clientY-rect.top;
+    bubble.style.cursor='grabbing';
+    e.preventDefault();
+  });
+
+  document.addEventListener('pointermove',e=>{
+    if(!dragging)return;
+    const vw=window.innerWidth,vh=window.innerHeight;
+    const bw=bubble.offsetWidth,bh=bubble.offsetHeight;
+    let nx=e.clientX-ox, ny=e.clientY-oy;
+    nx=Math.max(8,Math.min(vw-bw-8,nx));
+    ny=Math.max(8,Math.min(vh-bh-8,ny));
+    bubble.style.left=nx+'px'; bubble.style.top=ny+'px';
+    bubble.style.right='auto';
+  });
+
+  document.addEventListener('pointerup',()=>{dragging=false;bubble.style.cursor='grab';});
+})();
+
+/* ── Init ── */
+startWatch();
+window.addEventListener('resize',drawSpark);
+})();
+</script>
+</body>
+</html>
